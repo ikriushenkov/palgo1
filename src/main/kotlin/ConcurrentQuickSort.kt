@@ -1,40 +1,69 @@
-import kotlinx.coroutines.*
-import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ThreadLocalRandom
-import java.util.concurrent.atomic.AtomicInteger
 
-object ConcurrentQuickSort {
-    const val BLOCK = 10_000
+object ConcurrentQuickSort : Sort {
+    const val BLOCK = 1_000
     private val rand = ThreadLocalRandom.current()
 
-    suspend fun IntArray.sort(l: Int = 0, r: Int = size): IntArray {
+    override fun IntArray.sort(l: Int, r: Int) = runBlocking {
+        val job = GlobalScope.launch {
+            sortSuspend(l, r)
+        }
+        job.join()
+    }
+
+    suspend fun IntArray.sortSuspend(l: Int, r: Int) {
         if (r - l <= BLOCK) {
-            return sortedArray()
+            with(SeqQuickSort) {
+                sort(l, r)
+            }
+            return
+        }
+
+        val m = partition(l, r)
+
+        coroutineScope {
+            launch {
+                sortSuspend(l, m)
+            }
+            launch {
+                sortSuspend(m + 1, r)
+            }
+        }
+    }
+
+    suspend fun IntArray.sortWithFilter(l: Int = 0, r: Int = size) {
+        if (r - l <= BLOCK) {
+            with(SeqQuickSort) {
+                sort(l, r - 1)
+            }
+            return
         }
 
         val x = this[rand.nextInt(l, r)]
 
-        return coroutineScope {
+        coroutineScope {
             val left = async {
-                parallelFilter(l, r) { it < x }.sort()
+                parallelFilter(l, r) { it < x }.apply { sortWithFilter() }
             }
             val middle = async {
-                parallelFilter(l, r) { it == x }.sort()
+                parallelFilter(l, r) { it == x }.apply { sortWithFilter() }
             }
             val right = async {
-                parallelFilter(l, r) { it > x }.sort()
+                parallelFilter(l, r) { it > x }.apply { sortWithFilter() }
             }
 
             val leftArray = left.await()
             val middleArray = middle.await()
             val rightArray = right.await()
 
-            val res = leftArray.copyOf(leftArray.size + middleArray.size + rightArray.size)
-//            System.arraycopy(leftArray, 0, this@sort, 0, leftArray.size)
-            System.arraycopy(middleArray, 0, res, leftArray.size, middleArray.size)
-            System.arraycopy(rightArray, 0, res, leftArray.size + middleArray.size, rightArray.size)
-
-            return@coroutineScope res
+            System.arraycopy(leftArray, 0, this@sortWithFilter, 0, leftArray.size)
+            System.arraycopy(middleArray, 0, this@sortWithFilter, leftArray.size, middleArray.size)
+            System.arraycopy(rightArray, 0, this@sortWithFilter, leftArray.size + middleArray.size, rightArray.size)
         }
     }
 
@@ -109,104 +138,33 @@ object ConcurrentQuickSort {
         r: Int = size,
         crossinline transform: (Int) -> Int,
     ): IntArray {
-//        this as MutableList<Int>
         val destination = IntArray(r - l)
         parallelFor(l, r) { i ->
             destination[i - l] = transform(this[i])
         }
 
         return destination
-
-//        return destination
     }
 
-    val myFor: DeepRecursiveFunction<Triple<Int, Int, (Int) -> Unit>, Unit>
-        get() = DeepRecursiveFunction { (l, r, action) ->
-            if (r - l <= BLOCK) {
-                for (i in l until r) {
-                    action(i)
-                }
-                return@DeepRecursiveFunction
+    suspend fun IntArray.parallelFor(l: Int = 0, r: Int = size, action: (Int) -> Unit) {
+        if (r - l <= BLOCK) {
+            for (i in l until r) {
+                action(i)
             }
-
-            val m = (l + r) / 2
-
-            callRecursive(Triple(l, m, action))
-            callRecursive(Triple(m, r, action))
+            return
         }
 
-    suspend inline fun IntArray.parallelFor(l: Int = 0, r: Int = size, crossinline action: (Int) -> Unit) {
+        val m = (l + r) / 2
+
         coroutineScope {
-            val q = ConcurrentLinkedQueue<Pair<Int, Int>>()
-            val activeTasks = AtomicInteger(1)
-
-            q.add(l to r)
-
-            while (activeTasks.get() > 0) {
-                launch {
-                    val (left, right) = q.poll() ?: return@launch
-
-                    if (right - left <= BLOCK) {
-                        for (i in left until right) {
-                            action(i)
-                        }
-                        activeTasks.decrementAndGet()
-                        return@launch
-                    }
-
-                    val m = (left + right) / 2
-
-                    q.add(left to m)
-                    q.add(m to right)
-
-                    activeTasks.incrementAndGet()
-                }
+            launch {
+                parallelFor(l, m, action)
+            }
+            launch {
+                parallelFor(m, r, action)
             }
         }
-
-
-//        coroutineScope {
-//            for (i in l until r step BLOCK) {
-//                launch {
-//                    for (j in i until minOf(r, i + BLOCK)) {
-//                        action(j)
-//                    }
-//                }
-//            }
-//        }
-//        coroutineScope {
-//        (l until r step BLOCK).map { i ->
-//            GlobalScope.async {
-//                for (j in i until minOf(r, i + BLOCK)) {
-//                    action(j)
-//                }
-//            }
-//        }.awaitAll()
-//            for (i in l until r step BLOCK) {
-//
-//            }
-//        }
     }
-
-//    suspend fun List<Int>.parallelFor(l: Int = 0, r: Int = size, action: suspend (Int) -> Unit) {
-//        if (r - l <= BLOCK) {
-//            for (i in l until r) {
-//                action(i)
-//            }
-//            return
-//        }
-//
-//        val m = (l + r) / 2
-//
-//        coroutineScope {
-//            launch {
-//                parallelFor(l, m, action)
-//            }
-//            launch {
-//                parallelFor(m, r, action)
-//            }
-//        }
-//    }
 
     infix fun Int.divideRoundUp(divided: Int) = (this + divided - 1) / divided
 }
