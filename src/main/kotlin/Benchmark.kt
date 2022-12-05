@@ -1,20 +1,20 @@
 import kotlin.system.measureTimeMillis
 
-fun <T> benchmark(retry: Int = 5, generateInput: () -> T, vararg actions: (T) -> Unit) {
-    val inputs = List(retry) { generateInput() }
+fun benchmark(retry: Int = 5, generateInput: () -> IntArray, vararg actions: (IntArray) -> Unit) {
+    val inputs = Array(retry) { generateInput() }.map { arr -> Array(actions.size) { arr.clone() } }
 
     val times = actions.mapIndexed { index, action ->
         List(retry) { tryIndex ->
             measureTimeMillis {
-                action(inputs[index])
-            }.also { println("function: $index\ttry: $tryIndex\ttime: $it") }
+                action(inputs[tryIndex][index])
+            }.also { println("function: $index\ttry: $tryIndex\ttime: ${it.toDouble() / 1000}s") }
         }.average()
     }
 
     println("------------------------------")
 
     times.forEachIndexed { index, time ->
-        println("function: $index\tavg time: $time")
+        println("function: $index\tavg time: ${time / 1000}s")
     }
 
     println("------------------------------")
