@@ -30,9 +30,7 @@ object ConcurrentQuickSort : Sort {
             launch {
                 sortSuspend(l, m)
             }
-            launch {
-                sortSuspend(m + 1, r)
-            }
+            sortSuspend(m + 1, r)
         }
     }
 
