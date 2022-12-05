@@ -1,19 +1,21 @@
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ThreadLocalRandom
 
 object ConcurrentQuickSort : Sort {
     const val BLOCK = 1_000
     private val rand = ThreadLocalRandom.current()
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun IntArray.sort(l: Int, r: Int) = runBlocking {
-        val job = GlobalScope.launch {
+        withContext(Dispatchers.Default.limitedParallelism(4)) {
             sortSuspend(l, r)
         }
-        job.join()
     }
 
     suspend fun IntArray.sortSuspend(l: Int, r: Int) {

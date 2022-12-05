@@ -1,6 +1,11 @@
 import kotlin.system.measureTimeMillis
 
-fun benchmark(retry: Int = 5, generateInput: () -> IntArray, vararg actions: (IntArray) -> Unit) {
+fun benchmark(
+    retry: Int = 5,
+    generateInput: () -> IntArray,
+    assertCorrect: (IntArray) -> Boolean,
+    vararg actions: (IntArray) -> Unit,
+) {
     println("Start benchmark...")
     println("Start generate input...")
 
@@ -11,9 +16,14 @@ fun benchmark(retry: Int = 5, generateInput: () -> IntArray, vararg actions: (In
 
     val times = actions.mapIndexed { index, action ->
         List(retry) { tryIndex ->
-            measureTimeMillis {
-                action(inputs[tryIndex][index])
-            }.also { println("function: ${index + 1}\ttry: ${tryIndex + 1}\ttime: ${it.toDouble() / 1000}s") }
+            val input = inputs[tryIndex][index]
+            val time = measureTimeMillis {
+                action(input)
+            }
+            println("function: ${index + 1}\ttry: ${tryIndex + 1}\ttime: ${time.toDouble() / 1000}s")
+
+            check(assertCorrect(input)) { "Array is not sorted" }
+            time
         }.average()
     }
 
